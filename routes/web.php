@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\LairageController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -33,4 +34,8 @@ Route::get('/logo', function () {
 
     return response()->file($path);
 });
+
+
+
+Route::get('/lairage', [LairageController::class,'index'])->name('lairage');
 require __DIR__.'/auth.php';

@@ -37,7 +37,7 @@ import AccordionHeader from 'primevue/accordionheader';
 import AccordionContent from 'primevue/accordioncontent';
 
 
-const appName = import.meta.env.VITE_APP_NAME || 'Club Manager';
+const appName = import.meta.env.VITE_APP_NAME || 'WMS';
 
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,
