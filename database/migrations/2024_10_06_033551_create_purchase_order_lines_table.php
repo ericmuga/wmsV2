@@ -13,7 +13,13 @@ return new class extends Migration
     {
         Schema::create('purchase_order_lines', function (Blueprint $table) {
             $table->id();
-            $table->timestamps();
+
+            $table->foreignId('order_id')->constrained('purchase_orders')->onDelete('cascade');  // Foreign key referencing orders table
+            $table->string('item_no');  // Item number
+            // $table->string('item_description');  // Item description
+            $table->integer('order_qty')->nullable();  // Quantity, nullable in case not set yet
+            $table->timestamps();  // Created at and updated at timestamps
+            // $table->timestamps();
         });
     }
 

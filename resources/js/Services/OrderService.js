@@ -1,43 +1,77 @@
-// services/OrderService.js
+import axios from 'axios';
+
 export const OrderService = {
     getOrdersMini() {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve([
-                    {
-                        'Order No.': 'O1001',
-                        'Vendor No.': 'V1001',
-                        'Vendor Name': 'Vendor 1',
-                        'Posting Date': '2024-10-01',
-                        'Order Quantity': 100,
-                        'Received Quantity': 50,
-                    },
-                    {
-                        'Order No.': 'O1002',
-                        'Vendor No.': 'V1002',
-                        'Vendor Name': 'Vendor 2',
-                        'Posting Date': '2024-10-02',
-                        'Order Quantity': 200,
-                        'Received Quantity': 200,
-                    },
-                    {
-                        'Order No.': 'O1003',
-                        'Vendor No.': 'V1003',
-                        'Vendor Name': 'Vendor 3',
-                        'Posting Date': '2024-10-03',
-                        'Order Quantity': 150,
-                        'Received Quantity': 100,
-                    },
-                    {
-                        'Order No.': 'O1004',
-                        'Vendor No.': 'V1004',
-                        'Vendor Name': 'Vendor 4',
-                        'Posting Date': '2024-10-04',
-                        'Order Quantity': 300,
-                        'Received Quantity': 300,
-                    },
-                ]);
-            }, 1000); // Simulate a delay of 1 second
-        });
+        return axios.get('/purchaseOrders')
+            .then(response => {
+                return response.data; // Return the orders from the API
+            })
+            .catch(error => {
+                console.error('There was an error fetching the orders:', error);
+            });
+    },
+
+    addOrder(order,orderLines) {
+
+        return axios.post('/purchaseOrders', {order:order,
+                                              order_lines:orderLines
+                                        });
+            // .then(response => {
+            //     return response.data;})
+            // .catch(error => {
+            //     console.error('There was an error adding the order:', error);
+            // });
+    },
+
+     getPendingOrders() {
+      return axios.get('/purchaseOrders') // Replace with your actual API endpoint
+      .then(response => {
+        // Filter the orders with 'Pending' status
+        return response.data.filter(order => order.status === 'Pending');
+      })
+      .catch(error => {
+        console.error('Error fetching orders:', error);
+        throw error;
+      });
+  },
+
+    // updateOrder(orderId, updatedOrder) {
+    //     return axios.put(`/purchaseOrders/${orderId}`, updatedOrder)
+    //         .then(response => {
+    //             return response.data;
+    //         })
+    //         .catch(error => {
+    //             console.error('There was an error updating the order:', error);
+    //         });
+    // },
+
+    // deleteOrder(orderId) {
+    //     return axios.delete(`/purchaseOrders/${orderId}`)
+    //         .then(response => {
+    //             return response.data;
+    //         })
+    //         .catch(error => {
+    //             console.error('There was an error deleting the order:', error);
+    //         });
+    // },
+
+    calculateOrderQuantity(orderLines) {
+        return orderLines.reduce((total, line) => total + parseInt(line.order_qty), 0);
+    },
+
+    calculateReceivedQuantity(receiptLines) {
+        return receiptLines.reduce((total, line) => total + parseInt(line.received_qty), 0);
+    }
+};
+
+export const OrderNumberService = {
+    getNewOrderNumber() {
+        return axios.get('/new-order-number')
+            .then(response => {
+                return response.data.orderNumber;
+            })
+            .catch(error => {
+                console.error('There was an error generating a new order number:', error);
+            });
     },
 };

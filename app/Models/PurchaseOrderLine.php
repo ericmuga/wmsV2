@@ -8,4 +8,15 @@ use Illuminate\Database\Eloquent\Model;
 class PurchaseOrderLine extends Model
 {
     use HasFactory;
+
+    protected $guarded='id';
+    public function order()
+    {
+        return $this->belongsTo(PurchaseOrder::class);
+
+    }
+    public function receipt_lines()
+    {
+     return $this->hasMany(PurchaseOrderLine::class);
+    }
 }

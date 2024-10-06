@@ -2,21 +2,74 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import Toolbar from 'primevue/toolbar';
-import { ref, onMounted } from 'vue';
-import { OrderService } from '@/services/OrderService'; // Adjust the path if needed
+import { ref, onMounted ,computed} from 'vue';
+import { OrderService,OrderNumberService } from '@/services/OrderService'; // Adjust the path if needed
+import { ReceiptService,ReceiptNumberService } from '@/services/ReceiptService'; // Adjust the path if needed
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import ColumnGroup from 'primevue/columngroup';   // optional
 import Row from 'primevue/row';                   // optional
 import Modal from '@/Components/Modal.vue';
+import Modal2 from '@/Components/Modal.vue';
 import { VendorService } from '@/services/VendorService';
 import { ModeOfPaymentService } from '@/services/ModeOfPaymentService';
 import { CountyService } from '@/services/CountyService';
 import { DeliveryModeService } from '@/services/DeliveryModeService';
 import { MileageCodeService } from '@/services/MileageCodeService';
+import { ItemService } from '@/services/ItemService';
+import axios from 'axios';
+
+
+const showModal2 = ref(false);
+const selectedOrder = ref(null);
+// const receipt_lines = ref([]);
+const pendingOrderOptions = ref([]); // Will contain only Pending orders
+
+// Fetch the orders with status 'Pending' for the dropdown
+
+
+// Populate receipt details when an order is selected
+const populateReceiptDetails = () => {
+  const selected = pendingOrderOptions.value.find(order => order.order_no === selectedOrder.value);
+
+  if (selected) {
+    // Populate receipt with selected order data
+    receipt.value = { ...selected };
+
+    // Populate receipt lines and make the required modifications
+    receipt_lines.value = selected.order_lines.map(line => {
+      return {
+        ...line,  // Spread the existing line details
+        order_qty: parseInt(line.order_qty),  // Convert order_qty to an integer
+        received_qty: null,  // Add received_qty as empty (null)
+        identifier: '',  // Add identifier as an empty string
+      };
+    });
+  }
+};
+
 
 const orders = ref([]);
+const receipts = ref([]);
+
+// Function to calculate the sum of order quantities
+const calculateOrderQuantity = (orderLines) => {
+    return orderLines.reduce((total, line) => total + parseInt(line.order_qty), 0);
+};
+
+// Function to calculate received quantity based on status (can be adjusted based on receipt data)
+const calculateReceivedQuantity = (receiptLines, status) => {
+    if (status === 'Posted') {
+        return receiptLines.reduce((total, line) => total + parseInt(line.received_qty), 0); // Assume all are received
+    }
+    return 0; // Otherwise, assume 0 received
+};
+
+// Function for status coloring (optional)
+
 const showModal=ref(false);
+// const showModal2=ref(false);
+const itemOptions = ref([]);
 const today = () => {
     const date = new Date();
     return date.toISOString().substring(0, 10); // Returns 'YYYY-MM-DD' format
@@ -29,7 +82,30 @@ const countyOptions = ref([]);
 const deliveryModeOptions = ref([]);
 const mileageCodeOptions = ref([]);
 
+const addNewOrder = () => {
 
+
+    order.value={status:'Open',posting_date:today()}
+    order_lines.value=[];
+    showModal.value = true;
+    // Fetch a new order number when the modal opens
+    OrderNumberService.getNewOrderNumber().then((newOrderNo) => {
+        order.value.order_no = newOrderNo;
+    });
+};
+
+
+const addNewReceipt=()=>{
+    showModal.value=false;
+    showModal2.value=true;
+     receipt.value={status:'Open',posting_date:today()}
+    receipt_lines.value=[];
+
+    // Fetch a new order number when the modal opens
+    ReceiptNumberService.getNewReceiptNumber().then((newReceiptNo) => {
+        receipt.value.receipt_no = newReceiptNo;
+    });
+}
 
 // Order form data with default values
 const order = ref({
@@ -39,7 +115,7 @@ const order = ref({
     delivery_mode: '',
     delivery_date: null,
     delivery_time: null,
-    vendor_no: '',
+    vendor_no: null,
     vendor_name: '',
     mode_of_payment: '',
     haulier_no: '',
@@ -49,30 +125,131 @@ const order = ref({
     mileage_code: '',
 });
 
+const receipt = ref({
+    order_no: '',
+    receipt_no:'',
+    posting_date: today(),  // Set the posting date to today's date
+    status: 'Open',  // Default status to 'Open'
+    delivery_mode: '',
+    delivery_date: null,
+    delivery_time: null,
+    vendor_no: null,
+    vendor_name: '',
+    mode_of_payment: '',
+    haulier_no: '',
+    phone_no: '',
+    contact_name: '',
+    county: '',
+    mileage_code: '',
+});
+
+const getStatusClass = (status) => {
+    return status === 'Received' ? 'bg-lime-500 text-white p-1 rounded' :
+           status === 'Pending' ? 'bg-amber-500 text-white p-1 rounded' : '';
+};
+
 // Order lines form data
 const order_lines = ref([
-    { item_no: '', item_description: '', order_qty: null }
+    { item_no: '', order_qty: 0 }
 ]);
 
+const receipt_lines = ref([
+    { item_no: '', received_qty: 0,identifier:'',order_qty:0 }
+]);
 // Add new order line
 const addOrderLine = () => {
-    order_lines.value.push({ item_no: '', item_description: '', order_qty: null });
+    order_lines.value.push({ item_no: '', order_qty: null });
 };
+
+const addReceiptLine = () => {
+    receipt_lines.value.push({ item_no: '', received_qty: null,identifier:'' });
+};
+
 const removeOrderLine = (index) => {
     order_lines.value.splice(index, 1);
 };
+const removeReceiptLine = (index) => {
+    receipt_lines.value.splice(index, 1);
+};
+
+
+const isVendorSelected = computed(() => !!order.value.vendor_no);
 
 // Handle form submission
-const handleForm = () => {
-    const formData = {
-        order: order.value,
-        order_lines: order_lines.value
-    };
+const handleForm = async () => {
+    order.value.status = 'Pending';
+    console.log(order_lines.value); // Ensure this is an array before submission
 
-    console.log('Submitted Data:', formData);
-    // Submit the form data to the backend API (e.g., using Axios)
-    // axios.post('/your-endpoint', formData);
+
+    try {
+        // Add the new order to the OrderService
+        await OrderService.addOrder(order.value, order_lines.value);
+
+        // Clear the form after successful submission
+        order.value = {
+            order_no: '',
+            posting_date: today(),  // Set the posting date to today's date
+            status: 'Open',  // Default status to 'Open'
+            delivery_mode: '',
+            delivery_date: null,
+            delivery_time: null,
+            vendor_no: null,
+            vendor_name: '',
+            mode_of_payment: '',
+            haulier_no: '',
+            phone_no: '',
+            contact_name: '',
+            county: '',
+            mileage_code: '',
+        };
+
+        order_lines.value = [{ item_no: '', quantity: null }];
+
+        // alert('Order successfully created!');
+    } catch (error) {
+        console.error('There was an error adding the order:', error);
+    }
 };
+
+
+
+const handleForm2 = async () => {
+    receipt.value.status = 'Pending';
+    console.log(receipt_lines.value); // Ensure this is an array before submission
+
+
+    try {
+        // Add the new order to the OrderService
+        await ReceiptService.addReceipt(receipt.value, receipt_lines.value);
+
+        // Clear the form after successful submission
+        receipt.value = {
+            order_no: '',
+            receipt_no:'',
+            posting_date: today(),  // Set the posting date to today's date
+            status: 'Open',  // Default status to 'Open'
+            delivery_mode: '',
+            delivery_date: null,
+            delivery_time: null,
+            vendor_no: null,
+            vendor_name: '',
+            mode_of_payment: '',
+            haulier_no: '',
+            phone_no: '',
+            contact_name: '',
+            county: '',
+            mileage_code: '',
+        };
+
+        receipt_lines.value = [{ item_no: '', quantity: null,identifier:'' }];
+
+
+    } catch (error) {
+        console.error('There was an error adding the order:', error);
+    }
+    showModal2.value=false;
+};
+
 
 const updateVendorDetails = () => {
     const vendor = vendors.value.find(v => v.vendor_no === selectedVendor.value);
@@ -84,13 +261,32 @@ const updateVendorDetails = () => {
         order.value.contact_name = vendor.contact_name;
         order.value.county = vendor.county;
         order.value.mileage_code = vendor.mileage_code;
-        order.delivery_mode= vendor.delivery_mode;
+        order.value.delivery_mode= vendor.delivery_mode;
+        order.value.vendor_no=selectedVendor.value;
+        // alert(order.vendor_no)
     }
 };
+
 
 onMounted(() => {
     OrderService.getOrdersMini().then((data) => {
         orders.value = data;
+    });
+
+     OrderService.getPendingOrders()
+        .then(orders => {
+        pendingOrderOptions.value = orders;
+        })
+        .catch(error => {
+        console.error('Error loading pending orders:', error);
+        });
+    });
+
+
+
+
+     ReceiptService.getReceiptsMini().then((data) => {
+        receipts.value = data;
     });
 
     VendorService.getVendors().then((data) => {
@@ -103,8 +299,17 @@ onMounted(() => {
     // Fetch options for Mode of Payment
     ModeOfPaymentService.getModesOfPayment().then((data) => {
         modeOfPaymentOptions.value = data;
-    });
 
+
+    });
+ ItemService.getItems().then((data) => {
+        itemOptions.value = data;
+
+         itemOptions.value = data.map(item => ({
+            item_no: item.item_no,
+            description: `${item.item_no} | ${item.description}`, // Display as vendor_no | vendor_name
+        }));
+    });
     // Fetch options for County
     CountyService.getCounties().then((data) => {
         countyOptions.value = data;
@@ -120,7 +325,7 @@ onMounted(() => {
         mileageCodeOptions.value = data;
     });
     });
-});
+
 
 </script>
 
@@ -156,7 +361,7 @@ onMounted(() => {
                                     <Toolbar>
 
                                         <template #start>
-                                            <Button icon="pi pi-plus" class="mr-2" severity="secondary" text @click="showModal=true"/>
+                                            <Button icon="pi pi-plus" class="mr-2" severity="secondary" text @click="addNewOrder"/>
                                             <!-- <Button icon="pi pi-print" class="mr-2" severity="secondary" text /> -->
                                             <!-- <Button icon="pi pi-upload" severity="secondary" text /> -->
                                         </template>
@@ -174,14 +379,38 @@ onMounted(() => {
 
 
                                         <div class="card">
+
                                             <DataTable :value="orders" tableStyle="min-width: 50rem">
-                                                <Column field="Order No." header="Order No."></Column>
-                                                <Column field="Vendor No." header="Vendor No."></Column>
-                                                <Column field="Vendor Name" header="Vendor Name"></Column>
-                                                <Column field="Posting Date" header="Posting Date"></Column>
-                                                <Column field="Order Quantity" header="Order Quantity"></Column>
-                                                <Column field="Received Quantity" header="Received Quantity"></Column>
-                                            </DataTable>
+                                            <!-- Standard Columns for Order Info -->
+                                            <Column field="order_no" header="Order No."></Column>
+                                            <Column field="vendor_no" header="Vendor No."></Column>
+                                            <Column field="vendor_name" header="Vendor Name"></Column>
+                                            <Column field="posting_date" header="Posting Date"></Column>
+
+                                            <!-- Order Quantity Column -->
+                                            <Column header="Order Quantity">
+                                                <template #body="slotProps">
+                                                    {{ calculateOrderQuantity(slotProps.data.order_lines) }}
+                                                </template>
+                                            </Column>
+
+                                            <!-- Received Quantity Column (assuming we calculate based on status) -->
+                                            <Column header="Received Quantity">
+                                                <template #body="slotProps">
+                                                    {{ calculateReceivedQuantity(slotProps.data.order_lines, slotProps.data.status) }}
+                                                </template>
+                                            </Column>
+
+                                            <!-- Status Column with Conditional Coloring -->
+                                            <Column header="Status">
+                                                <template #body="slotProps">
+                                                    <span :class="getStatusClass(slotProps.data.status)">
+                                                        {{ slotProps.data.status }}
+                                                    </span>
+                                                </template>
+                                            </Column>
+                                        </DataTable>
+
                                         </div>
 
 
@@ -233,10 +462,110 @@ onMounted(() => {
                                     </div>
                                 </TabPanel>
                                 <TabPanel value="1">
-                                    <p class="m-0">
-                                        Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim
-                                        ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Consectetur, adipisci velit, sed quia non numquam eius modi.
-                                    </p>
+                                      <div class="grid grid-cols-4 ">
+
+                                    <div class="col-span-3 p-2 shadow-sm border-stone-100">
+                                    <Toolbar>
+
+                                        <template #start>
+                                            <Button icon="pi pi-plus" class="mr-2" severity="secondary" text @click="addNewReceipt"/>
+                                            <!-- <Button icon="pi pi-print" class="mr-2" severity="secondary" text /> -->
+                                            <!-- <Button icon="pi pi-upload" severity="secondary" text /> -->
+                                        </template>
+
+                                        <template #center>
+                                            <IconField>
+
+                                                <InputText placeholder="Search Receipt" />
+                                            </IconField>
+                                        </template>
+
+
+
+                                    </Toolbar>
+
+
+                                        <div class="card">
+
+                                            <DataTable :value="receipts" tableStyle="min-width: 50rem">
+                                            <!-- Standard Columns for Order Info -->
+                                            <Column field="order_no" header="Order No."></Column>
+                                            <Column field="receipt_no" header="Receipt No."></Column>
+                                            <Column field="vendor_no" header="Vendor No."></Column>
+                                            <Column field="vendor_name" header="Vendor Name"></Column>
+                                            <Column field="posting_date" header="Posting Date"></Column>
+                                            <Column header="Order Quantity">
+                                                <template #body="slotProps">
+                                                    {{ calculateOrderQuantity(slotProps.data.order_lines) }}
+                                                </template>
+                                            </Column>
+
+                                            <!-- Received Quantity Column (assuming we calculate based on status) -->
+                                            <Column header="Received Quantity">
+                                                <template #body="slotProps">
+                                                    {{ calculateReceivedQuantity(slotProps.data.order_lines, slotProps.data.status) }}
+                                                </template>
+                                            </Column>
+
+                                            <!-- Status Column with Conditional Coloring -->
+                                            <Column header="Status">
+                                                <template #body="slotProps">
+                                                    <span :class="getStatusClass(slotProps.data.status)">
+                                                        {{ slotProps.data.status }}
+                                                    </span>
+                                                </template>
+                                            </Column>
+                                        </DataTable>
+
+                                        </div>
+
+
+                                    </div>
+                                     <div>
+                                        <div class="flex flex-col gap-2 text-center">
+                                            <div class="p-2 bg-teal-200 rounded-lg">Today</div>
+
+                                            <div class="flex flex-row justify-between px-5 ">
+                                                    <div>Rosemark</div>
+                                                    <div> 12</div>
+                                            </div>
+
+                                            <div class="flex flex-row justify-between px-5 ">
+                                                    <div>Third Party</div>
+                                                    <div> 72</div>
+                                            </div>
+                                            <div><hr></div>
+                                            <div class="flex flex-row justify-between px-5 ">
+                                                    <div>Total</div>
+                                                    <div> 84</div>
+                                            </div>
+
+
+                                        </div>
+                                          <div class="flex flex-col gap-2 text-center">
+                                            <div class="p-2 rounded-lg bg-slate-400">Yesterday</div>
+
+                                            <div class="flex flex-row justify-between px-5 ">
+                                                    <div>Rosemark</div>
+                                                    <div> 12</div>
+                                            </div>
+
+                                            <div class="flex flex-row justify-between px-5 ">
+                                                    <div>Third Party</div>
+                                                    <div> 72</div>
+                                            </div>
+                                            <div><hr></div>
+                                            <div class="flex flex-row justify-between px-5 ">
+                                                    <div>Total</div>
+                                                    <div> 84</div>
+                                            </div>
+
+
+                                        </div>
+
+                                     </div>
+
+                                    </div>
                                 </TabPanel>
                                 <TabPanel value="2">
                                     <p class="m-0">
@@ -259,7 +588,7 @@ onMounted(() => {
             <div class="grid grid-cols-2 gap-1 p-1 text-sm">
                 <div class="flex flex-row items-center justify-between gap-1">
                     <label for="order_no">Order No.</label>
-                    <InputText v-model="order.order_no" id="order_no" />
+                    <InputText v-model="order.order_no" id="order_no"  readonly />
                 </div>
 
                 <div class="flex flex-row items-center justify-between gap-1">
@@ -287,6 +616,7 @@ onMounted(() => {
                                 class="w-full"
                                 @change="updateVendorDetails"
                             />
+                            <input type="text" v-model="order.vendor_no" hidden/>
                 </div>
 
                 <div class="flex flex-row items-center justify-between gap-1">
@@ -319,7 +649,7 @@ onMounted(() => {
 
                 <div class="flex flex-row items-center justify-between gap-1">
                     <label for="status">Status</label>
-                    <InputText v-model="order.status" id="status" />
+                    <InputText v-model="order.status" id="status" readonly />
                 </div>
 
                 <!-- Select for Delivery Mode -->
@@ -367,20 +697,21 @@ onMounted(() => {
             <div class="p-4">
                 <h3 class="mb-4 font-bold">Order Lines</h3>
 
-                <div v-for="(line, index) in order_lines" :key="index" class="flex flex-row gap-4 mb-2 text-sm">
-                    <div>
-                        <label for="item_no">Item No.</label>
-                        <InputText v-model="line.item_no" type="text" class="w-full" />
-                    </div>
+                <div v-for="(line, index) in order_lines" :key="index" class="flex flex-row items-center gap-1 text-sm place-items-center">
+                      <Select
+                        v-model="line.item_no"
+                        :options="itemOptions"
+                        optionLabel="description"
+                        optionValue="item_no"
 
-                    <div>
-                        <label for="item_description">Item Description</label>
-                        <InputText v-model="line.item_description" type="text" class="w-full" />
-                    </div>
+                        @change="updateItemDescription(index)"
+                        style="height: 50%;"
+                        />
+
 
                     <div>
                         <label for="order_qty">Order Quantity</label>
-                        <InputNumber v-model="line.order_qty" class="w-full" />
+                        <InputNumber v-model="line.order_qty" class="" />
                     </div>
                 <!-- Remove Order Line Button -->
                     <div class="flex items-center">
@@ -393,7 +724,7 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <Button label="+ Add Line" @click="addOrderLine" class="mt-2 p-button-sm" />
+                <Button label="+ Add Line" @click="addOrderLine" class="mt-2 p-button-sm" :disabled="!isVendorSelected"/>
             </div>
 
             <!-- Submit and Close Buttons -->
@@ -403,4 +734,180 @@ onMounted(() => {
             </div>
         </form>
     </Modal>
+
+    <Modal2 :show="showModal2" @close="showModal2 = false" maxWidth='2xl'>
+        <form @submit.prevent="handleForm2" class="m-6">
+            <div class="p-3 mx-5 my-3 font-bold text-center text-black uppercase rounded-md bg-cyan-400">Purchase Receipt</div>
+
+            <!-- Order Data Form -->
+            <div class="grid grid-cols-2 gap-1 p-1 text-sm">
+                <div class="flex flex-row items-center justify-between gap-1">
+                    <label for="order_no">Receipt No.</label>
+                    <InputText v-model="receipt.receipt_no" id="order_no"  readonly />
+                </div>
+                <div class="flex flex-row items-center justify-between gap-1">
+                    <label for="order_no">Select Order (Pending)</label>
+                    <Select
+                    v-model="selectedOrder"
+                    :options="pendingOrderOptions"
+                    optionLabel="order_no"
+                    optionValue="order_no"
+                    @change="populateReceiptDetails"
+                    class="w-full"
+                    />
+                </div>
+
+                <div class="flex flex-row items-center justify-between gap-1">
+                    <label for="posting_date">Posting Date</label>
+                    <input type="date" v-model="receipt.posting_date" id="posting_date" class="rounded-lg"/>
+                </div>
+
+                 <div class="flex flex-row items-center justify-between gap-1">
+                    <label for="delivery_date">Delivery Date</label>
+                    <input type="date" v-model="receipt.delivery_date" id="delivery_date" class="rounded-lg" />
+                </div>
+
+                <div class="flex flex-row items-center justify-between">
+                    <label for="delivery_time">Delivery Time</label>
+                    <input type="time" v-model="receipt.delivery_time" id="delivery_time" timeOnly class="rounded-lg" readonly/>
+                </div>
+
+                <div class="flex flex-row items-center justify-between">
+                            <label for="vendor_no">Vendor No.</label>
+                            <Select
+                                v-model="selectedVendor"
+                                :options="vendorOptions"
+                                optionLabel="vendorLabel"
+                                optionValue="vendor_no"
+                                class="w-full"
+                               readonly
+                            />
+                            <input type="text" v-model="receipt.vendor_no" hidden/>
+                </div>
+
+                <div class="flex flex-row items-center justify-between gap-1">
+                    <label for="vendor_name">Vendor Name</label>
+                    <InputText v-model="receipt.vendor_name" id="vendor_name" readonly/>
+                </div>
+
+               <div class="flex flex-row items-center justify-between gap-1">
+                            <label for="county">County</label>
+                            <Select
+                                v-model="receipt.county"
+                                :options="countyOptions"
+                                 optionLabel="description"
+                                 optionValue="code"
+                                class="w-full"
+                            />
+                        </div>
+
+               <!-- Select for Mileage Code -->
+                <div>
+                    <label for="mileage_code">Mileage Code</label>
+                    <Select
+                        v-model="receipt.mileage_code"
+                        :options="mileageCodeOptions"
+                         optionLabel="description"
+                        optionValue="code"
+                        class="w-full"
+                    />
+                </div>
+
+                <div class="flex flex-row items-center justify-between gap-1">
+                    <label for="status">Status</label>
+                    <InputText v-model="receipt.status" id="status" readonly />
+                </div>
+
+                <!-- Select for Delivery Mode -->
+                    <div class="flex flex-row items-center justify-between gap-1">
+                        <label for="delivery_mode">Delivery Mode</label>
+                        <Select
+                            v-model="receipt.delivery_mode"
+                            :options="deliveryModeOptions"
+                             optionLabel="description"
+                                optionValue="code"
+                            class="w-full"
+                        />
+                    </div>
+
+
+
+                <div class="flex flex-row items-center justify-between gap-1">
+                            <label for="mode_of_payment">Mode of Payment</label>
+                            <Select
+                                v-model="receipt.mode_of_payment"
+                                :options="modeOfPaymentOptions"
+                                optionLabel="description"
+                                optionValue="code"
+                                class="w-full"
+                            />
+                        </div>
+
+                <div class="flex flex-row items-center justify-between gap-1">
+                    <label for="haulier_no">Haulier No.</label>
+                    <InputText v-model="receipt.haulier_no" id="haulier_no" />
+                </div>
+
+                <div class="flex flex-row items-center justify-between gap-1">
+                    <label for="phone_no">Phone No.</label>
+                    <InputText v-model="receipt.phone_no" id="phone_no" />
+                </div>
+
+                <div class="flex flex-row items-center justify-between gap-1">
+                    <label for="contact_name">Contact Name</label>
+                    <InputText v-model="receipt.contact_name" id="contact_name" />
+                </div>
+            </div>
+
+            <!-- Order Lines Data Form -->
+            <div class="p-4">
+                <h3 class="mb-4 font-bold">Receipt Lines</h3>
+
+                <div v-for="(line, index) in receipt_lines" :key="index" class="flex flex-row items-center gap-1 text-sm place-items-center">
+                      <Select
+                        v-model="line.item_no"
+                        :options="itemOptions"
+                        optionLabel="description"
+                        optionValue="item_no"
+
+                        @change="updateItemDescription(index)"
+                        style="height: 50%;"
+                        readonly
+                        />
+
+
+                    <div>
+                        <label for="order_qty">Order Quantity</label>
+                        <input  v-model="line.order_qty"  size="5" class="rounded-lg" readonly />
+                    </div>
+                    <div>
+                        <label for="received_qty">Received Quantity</label>
+                        <input  v-model="line.received_qty" size="5" class="rounded-lg" />
+                    </div>
+
+                     <div>
+                        <label for="identifier">Identifier</label>
+                        <InputText v-model="line.identifier"  />
+                    </div>
+                <!-- Remove Order Line Button -->
+                    <!-- <div class="flex items-center">
+                        <Button
+                            icon="pi pi-times"
+                            class="p-button-rounded p-button-danger"
+                            @click="removeOrderLine(index)"
+
+                        />
+                    </div> -->
+                </div>
+
+
+            </div>
+
+            <!-- Submit and Close Buttons -->
+            <div class="flex flex-row justify-center gap-2 mt-4">
+                <Button label="Post" type="submit" icon="pi pi-send" />
+                <Button label="Close" type="button" severity="danger" icon="pi pi-trash" @click="showModal2 = false" />
+            </div>
+        </form>
+    </Modal2>
 </template>
