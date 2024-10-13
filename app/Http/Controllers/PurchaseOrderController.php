@@ -11,24 +11,10 @@ class PurchaseOrderController extends Controller
 {
     public function index()
     {
-        $orders = PurchaseOrder::with('orderLines')->get();
+        $orders = PurchaseOrder::latest()->with('orderLines.receipt_lines')->get();
         return response()->json($orders);
     }
 
-//    public function store(Request $request)
-// {
-
-//   dd($request->all());
-//     // Create the purchase order
-//     $order = PurchaseOrder::create($request->order);
-
-//     // Create the associated order lines
-//     foreach ($request->order_lines as $line) {
-//         $order->orderLines()->create($line);
-//     }
-
-//     return response()->json($order->load('orderLines'), 201);
-// }
 
 public function store(Request $request)
 {
@@ -43,7 +29,7 @@ public function store(Request $request)
                                         ]);
     }
 
-    // Return the order with the created order lines
+
     return response()->json($order->load('orderLines'), 201);
 }
 

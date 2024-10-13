@@ -17,6 +17,6 @@ class PurchaseOrderLine extends Model
     }
     public function receipt_lines()
     {
-     return $this->hasMany(PurchaseOrderLine::class);
+     return $this->hasMany(PurchaseReceiptLine::class,'purchase_order_line_id');
     }
 }

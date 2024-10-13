@@ -15,6 +15,8 @@ return new class extends Migration
         Schema::create('purchase_receipts', function (Blueprint $table) {
                 $table->id();
                 $table->foreignIdFor(PurchaseOrder::class);
+                $table->string('receipt_no');
+                $table->string('order_no');
                 $table->date('posting_date');  // Posting date
                 $table->string('status')->default('Open');  // Status with default value 'Open'
                 $table->string('delivery_mode')->nullable();
@@ -28,6 +30,8 @@ return new class extends Migration
                 $table->string('contact_name')->nullable();  // Contact name
                 $table->string('county')->nullable();  // County
                 $table->string('mileage_code')->nullable();  // Mileage code
+                $table->boolean('cess_paid');
+                $table->boolean('no_objection');
                 $table->timestamps();  // Created at and updated at t
 
         });

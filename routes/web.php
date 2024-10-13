@@ -52,9 +52,12 @@ Route::put('/purchaseReceipts/{receipt}', [PurchaseReceiptController::class, 'up
 Route::delete('/purchaseReceipts/{receipt}', [PurchaseReceiptController::class, 'destroy']);
 
 Route::get('/new-receipt-number', function () {
-    $orderNumber = 'ORD-' . str_pad(rand(0, 9999), 4, '0', STR_PAD_LEFT);
-    return response()->json(['receiptNumber' => $orderNumber]);
+    $receiptNumber = 'RCT-' . str_pad(rand(0, 9999), 4, '0', STR_PAD_LEFT);
+    return response()->json(['receiptNumber' => $receiptNumber]);
 });
+
+
+
 
 });
 

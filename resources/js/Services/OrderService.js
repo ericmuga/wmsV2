@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 export const OrderService = {
-    getOrdersMini() {
+    getOrders() {
         return axios.get('/purchaseOrders')
             .then(response => {
                 return response.data; // Return the orders from the API

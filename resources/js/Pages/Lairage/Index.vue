@@ -17,6 +17,7 @@ import { CountyService } from '@/services/CountyService';
 import { DeliveryModeService } from '@/services/DeliveryModeService';
 import { MileageCodeService } from '@/services/MileageCodeService';
 import { ItemService } from '@/services/ItemService';
+import { PenService } from '@/services/PenService';
 import axios from 'axios';
 
 
@@ -33,36 +34,93 @@ const populateReceiptDetails = () => {
   const selected = pendingOrderOptions.value.find(order => order.order_no === selectedOrder.value);
 
   if (selected) {
+    // Save the current receipt_no before updating receipt
+    const currentReceiptNo = receipt.value.receipt_no;
+
+
+
+    // delete selected.order_lines;
     // Populate receipt with selected order data
-    receipt.value = { ...selected };
+    receipt.value = {
+      ...selected,
+      receipt_no: currentReceiptNo,  // Reassign the saved receipt_no
+      cess_paid:false,
+      no_objection:false,
+      purchase_order_id:selected.id
+    };
+
+   delete receipt.value.id;
 
     // Populate receipt lines and make the required modifications
     receipt_lines.value = selected.order_lines.map(line => {
       return {
         ...line,  // Spread the existing line details
         order_qty: parseInt(line.order_qty),  // Convert order_qty to an integer
+        posting_date: today(),
         received_qty: null,  // Add received_qty as empty (null)
         identifier: '',  // Add identifier as an empty string
+        order_line_id: line.id
       };
     });
   }
+
+  delete receipt.value.order_lines;
+  delete receipt.value.updated_at;
+  delete receipt.value.created_at;
 };
+
 
 
 const orders = ref([]);
 const receipts = ref([]);
 
 // Function to calculate the sum of order quantities
-const calculateOrderQuantity = (orderLines) => {
-    return orderLines.reduce((total, line) => total + parseInt(line.order_qty), 0);
+// const calculateOrderQuantity = (orderLines) => {
+//     return orderLines.reduce((total, line) => total + parseInt(line.order_qty), 0);
+// };
+
+// // Function to calculate received quantity based on status (can be adjusted based on receipt data)
+// const calculateReceivedQuantity = (receiptLines, status) => {
+//     if (status === 'Posted') {
+//         return receiptLines.reduce((total, line) => total + parseInt(line.received_qty), 0); // Assume all are received
+//     }
+//     return 0; // Otherwise, assume 0 received
+// };
+
+const calculateTotalOrderQuantity = (orderLines) => {
+    if (!orderLines || orderLines.length === 0) return 0;
+    return orderLines.reduce((total, line) => {
+        return total + (line.order_qty ? parseInt(line.order_qty) : 0);
+    }, 0);
 };
 
-// Function to calculate received quantity based on status (can be adjusted based on receipt data)
-const calculateReceivedQuantity = (receiptLines, status) => {
-    if (status === 'Posted') {
-        return receiptLines.reduce((total, line) => total + parseInt(line.received_qty), 0); // Assume all are received
-    }
-    return 0; // Otherwise, assume 0 received
+// Function to calculate total received quantity from receipt_lines inside order_lines
+const calculateTotalReceivedQuantity = (orderLines) => {
+    if (!orderLines || orderLines.length === 0) return 0;
+    return orderLines.reduce((total, line) => {
+        if (line.receipt_lines && line.receipt_lines.length > 0) {
+            return total + line.receipt_lines.reduce((subTotal, receiptLine) => {
+                return subTotal + (receiptLine.received_qty ? parseInt(receiptLine.received_qty) : 0);
+            }, 0);
+        }
+        return total;
+    }, 0);
+};
+
+// Function to calculate total order quantity from receiptLines
+const calculateOrderQuantityInReceipts = (receiptLines) => {
+    if (!receiptLines) return 0; // Add this check to prevent the undefined error
+    return receiptLines.reduce((total, line) => {
+        return total + (line.order_line ? parseInt(line.order_line.order_qty) : 0);
+    }, 0);
+};
+
+// Function to calculate total received quantity from receiptLines
+const calculateReceivedQuantityInReceipts = (receiptLines) => {
+    if (!receiptLines) return 0; // Add this check to prevent the undefined error
+    return receiptLines.reduce((total, line) => {
+        return total + (line.received_qty ? parseInt(line.received_qty) : 0);
+    }, 0);
 };
 
 // Function for status coloring (optional)
@@ -70,6 +128,7 @@ const calculateReceivedQuantity = (receiptLines, status) => {
 const showModal=ref(false);
 // const showModal2=ref(false);
 const itemOptions = ref([]);
+const penOptions = ref([]);
 const today = () => {
     const date = new Date();
     return date.toISOString().substring(0, 10); // Returns 'YYYY-MM-DD' format
@@ -98,6 +157,7 @@ const addNewOrder = () => {
 const addNewReceipt=()=>{
     showModal.value=false;
     showModal2.value=true;
+    selectedOrder.value=null;
      receipt.value={status:'Open',posting_date:today()}
     receipt_lines.value=[];
 
@@ -128,6 +188,7 @@ const order = ref({
 const receipt = ref({
     order_no: '',
     receipt_no:'',
+    purchase_order_id:null,
     posting_date: today(),  // Set the posting date to today's date
     status: 'Open',  // Default status to 'Open'
     delivery_mode: '',
@@ -141,6 +202,8 @@ const receipt = ref({
     contact_name: '',
     county: '',
     mileage_code: '',
+    cess_paid:false,
+    no_objection:false
 });
 
 const getStatusClass = (status) => {
@@ -154,7 +217,7 @@ const order_lines = ref([
 ]);
 
 const receipt_lines = ref([
-    { item_no: '', received_qty: 0,identifier:'',order_qty:0 }
+    { item_no: '', received_qty: 0,identifier:'',order_qty:0 ,pen_no:''}
 ]);
 // Add new order line
 const addOrderLine = () => {
@@ -162,7 +225,7 @@ const addOrderLine = () => {
 };
 
 const addReceiptLine = () => {
-    receipt_lines.value.push({ item_no: '', received_qty: null,identifier:'' });
+    receipt_lines.value.push({ item_no: '', received_qty: null, identifier:'' });
 };
 
 const removeOrderLine = (index) => {
@@ -185,6 +248,10 @@ const handleForm = async () => {
         // Add the new order to the OrderService
         await OrderService.addOrder(order.value, order_lines.value);
 
+         OrderService.getOrdersMini().then((data) => {
+            orders.value = data;
+        });
+
         // Clear the form after successful submission
         order.value = {
             order_no: '',
@@ -201,10 +268,11 @@ const handleForm = async () => {
             contact_name: '',
             county: '',
             mileage_code: '',
+
         };
 
         order_lines.value = [{ item_no: '', quantity: null }];
-
+        showModal.value=false;
         // alert('Order successfully created!');
     } catch (error) {
         console.error('There was an error adding the order:', error);
@@ -215,7 +283,13 @@ const handleForm = async () => {
 
 const handleForm2 = async () => {
     receipt.value.status = 'Pending';
-    console.log(receipt_lines.value); // Ensure this is an array before submission
+
+    console.log(receipt.value)
+
+    delete receipt.value.id;
+    delete receipt.value.created_at;
+    delete receipt.value.update_at;
+
 
 
     try {
@@ -227,7 +301,7 @@ const handleForm2 = async () => {
             order_no: '',
             receipt_no:'',
             posting_date: today(),  // Set the posting date to today's date
-            status: 'Open',  // Default status to 'Open'
+            status: 'Pending',  // Default status to 'Open'
             delivery_mode: '',
             delivery_date: null,
             delivery_time: null,
@@ -239,9 +313,11 @@ const handleForm2 = async () => {
             contact_name: '',
             county: '',
             mileage_code: '',
+            cess_paid:false,
+            no_objection:false
         };
 
-        receipt_lines.value = [{ item_no: '', quantity: null,identifier:'' }];
+        receipt_lines.value = [{ item_no: '', quantity: null,identifier:'',order_line_id:null }];
 
 
     } catch (error) {
@@ -269,7 +345,7 @@ const updateVendorDetails = () => {
 
 
 onMounted(() => {
-    OrderService.getOrdersMini().then((data) => {
+    OrderService.getOrders().then((data) => {
         orders.value = data;
     });
 
@@ -285,7 +361,7 @@ onMounted(() => {
 
 
 
-     ReceiptService.getReceiptsMini().then((data) => {
+     ReceiptService.getReceipts().then((data) => {
         receipts.value = data;
     });
 
@@ -309,6 +385,10 @@ onMounted(() => {
             item_no: item.item_no,
             description: `${item.item_no} | ${item.description}`, // Display as vendor_no | vendor_name
         }));
+    });
+
+     PenService.getPens().then((data) => {
+        penOptions.value = data;
     });
     // Fetch options for County
     CountyService.getCounties().then((data) => {
@@ -387,17 +467,16 @@ onMounted(() => {
                                             <Column field="vendor_name" header="Vendor Name"></Column>
                                             <Column field="posting_date" header="Posting Date"></Column>
 
-                                            <!-- Order Quantity Column -->
                                             <Column header="Order Quantity">
                                                 <template #body="slotProps">
-                                                    {{ calculateOrderQuantity(slotProps.data.order_lines) }}
+                                                    {{ calculateTotalOrderQuantity(slotProps.data.order_lines) }}
                                                 </template>
                                             </Column>
 
-                                            <!-- Received Quantity Column (assuming we calculate based on status) -->
+                                            <!-- Received Quantity Column -->
                                             <Column header="Received Quantity">
                                                 <template #body="slotProps">
-                                                    {{ calculateReceivedQuantity(slotProps.data.order_lines, slotProps.data.status) }}
+                                                    {{ calculateTotalReceivedQuantity(slotProps.data.order_lines) }}
                                                 </template>
                                             </Column>
 
@@ -488,34 +567,27 @@ onMounted(() => {
                                         <div class="card">
 
                                             <DataTable :value="receipts" tableStyle="min-width: 50rem">
-                                            <!-- Standard Columns for Order Info -->
-                                            <Column field="order_no" header="Order No."></Column>
-                                            <Column field="receipt_no" header="Receipt No."></Column>
-                                            <Column field="vendor_no" header="Vendor No."></Column>
-                                            <Column field="vendor_name" header="Vendor Name"></Column>
-                                            <Column field="posting_date" header="Posting Date"></Column>
-                                            <Column header="Order Quantity">
-                                                <template #body="slotProps">
-                                                    {{ calculateOrderQuantity(slotProps.data.order_lines) }}
-                                                </template>
-                                            </Column>
+                                                <!-- Standard Columns for Order Info -->
+                                                <Column field="order_no" header="Order No."></Column>
+                                                <Column field="receipt_no" header="Receipt No."></Column>
+                                                <Column field="vendor_no" header="Vendor No."></Column>
+                                                <Column field="vendor_name" header="Vendor Name"></Column>
+                                                <Column field="posting_date" header="Posting Date"></Column>
 
-                                            <!-- Received Quantity Column (assuming we calculate based on status) -->
-                                            <Column header="Received Quantity">
-                                                <template #body="slotProps">
-                                                    {{ calculateReceivedQuantity(slotProps.data.order_lines, slotProps.data.status) }}
-                                                </template>
-                                            </Column>
+                                                <!-- Order Quantity Column -->
+                                                <Column header="Order Quantity">
+                                                    <template #body="slotProps">
+                                                        {{ calculateOrderQuantityInReceipts(slotProps.data.receipt_lines) }}
+                                                    </template>
+                                                </Column>
 
-                                            <!-- Status Column with Conditional Coloring -->
-                                            <Column header="Status">
-                                                <template #body="slotProps">
-                                                    <span :class="getStatusClass(slotProps.data.status)">
-                                                        {{ slotProps.data.status }}
-                                                    </span>
-                                                </template>
-                                            </Column>
-                                        </DataTable>
+                                                <!-- Received Quantity Column -->
+                                                <Column header="Received Quantity">
+                                                    <template #body="slotProps">
+                                                        {{ calculateReceivedQuantityInReceipts(slotProps.data.receipt_lines) }}
+                                                    </template>
+                                                </Column>
+    </DataTable>
 
                                         </div>
 
@@ -743,10 +815,10 @@ onMounted(() => {
             <div class="grid grid-cols-2 gap-1 p-1 text-sm">
                 <div class="flex flex-row items-center justify-between gap-1">
                     <label for="order_no">Receipt No.</label>
-                    <InputText v-model="receipt.receipt_no" id="order_no"  readonly />
+                    <InputText v-model="receipt.receipt_no" id="order_no"  readonly disabled/>
                 </div>
                 <div class="flex flex-row items-center justify-between gap-1">
-                    <label for="order_no">Select Order (Pending)</label>
+                    <label for="order_no">Order No. (Pending)</label>
                     <Select
                     v-model="selectedOrder"
                     :options="pendingOrderOptions"
@@ -769,25 +841,18 @@ onMounted(() => {
 
                 <div class="flex flex-row items-center justify-between">
                     <label for="delivery_time">Delivery Time</label>
-                    <input type="time" v-model="receipt.delivery_time" id="delivery_time" timeOnly class="rounded-lg" readonly/>
+                    <input type="time" v-model="receipt.delivery_time" id="delivery_time" timeOnly class="rounded-lg" />
                 </div>
 
                 <div class="flex flex-row items-center justify-between">
                             <label for="vendor_no">Vendor No.</label>
-                            <Select
-                                v-model="selectedVendor"
-                                :options="vendorOptions"
-                                optionLabel="vendorLabel"
-                                optionValue="vendor_no"
-                                class="w-full"
-                               readonly
-                            />
-                            <input type="text" v-model="receipt.vendor_no" hidden/>
+
+                            <InputText type="text" v-model="receipt.vendor_no" disabled/>
                 </div>
 
                 <div class="flex flex-row items-center justify-between gap-1">
                     <label for="vendor_name">Vendor Name</label>
-                    <InputText v-model="receipt.vendor_name" id="vendor_name" readonly/>
+                    <InputText v-model="receipt.vendor_name" id="vendor_name" disabled/>
                 </div>
 
                <div class="flex flex-row items-center justify-between gap-1">
@@ -815,7 +880,7 @@ onMounted(() => {
 
                 <div class="flex flex-row items-center justify-between gap-1">
                     <label for="status">Status</label>
-                    <InputText v-model="receipt.status" id="status" readonly />
+                    <InputText v-model="receipt.status" id="status" disabled/>
                 </div>
 
                 <!-- Select for Delivery Mode -->
@@ -857,47 +922,68 @@ onMounted(() => {
                     <label for="contact_name">Contact Name</label>
                     <InputText v-model="receipt.contact_name" id="contact_name" />
                 </div>
+                <div class="flex flex-wrap justify-center gap-4 card">
+                  <div class="flex items-center">
+                    <Checkbox v-model="receipt.no_objection" binary="true" />
+                    <label for="no_objection" class="ml-2"> No Objection </label>
+                </div>
+
+                <div class="flex items-center">
+                    <Checkbox v-model="receipt.cess_paid" binary="true" />
+                    <label for="cess_paid" class="ml-2"> Cess Paid </label>
+                </div>
+
+                </div>
             </div>
 
             <!-- Order Lines Data Form -->
             <div class="p-4">
                 <h3 class="mb-4 font-bold">Receipt Lines</h3>
 
-                <div v-for="(line, index) in receipt_lines" :key="index" class="flex flex-row items-center gap-1 text-sm place-items-center">
-                      <Select
+                <div v-for="(line, index) in receipt_lines" :key="index" class="flex flex-row items-center justify-center gap-1 text-sm place-items-center">
+                      <div class="flex flex-col">
+                        <label for="description">Item</label>
+                        <!-- <InputText v-model="line.item_no" disabled/> -->
+                         <Select
                         v-model="line.item_no"
                         :options="itemOptions"
                         optionLabel="description"
                         optionValue="item_no"
+                        style="height: 50%; "
 
-                        @change="updateItemDescription(index)"
-                        style="height: 50%;"
-                        readonly
+                        disabled
                         />
+                      </div>
+
 
 
                     <div>
-                        <label for="order_qty">Order Quantity</label>
-                        <input  v-model="line.order_qty"  size="5" class="rounded-lg" readonly />
+                        <label for="order_qty">Ord_qty</label>
+                        <input type="text"  v-model="line.order_qty"  size="3" class="rounded-lg bg-slate-200 " disabled />
                     </div>
                     <div>
-                        <label for="received_qty">Received Quantity</label>
-                        <input  v-model="line.received_qty" size="5" class="rounded-lg" />
+                        <label for="received_qty">Rcp_qty</label>
+                        <input type="text"  v-model="line.received_qty" size="3" class="rounded-lg" />
                     </div>
+
+                    <div class="flex flex-col">
+                        <label for="description">Pen</label>
+
+                         <Select
+                        v-model="line.pen_no"
+                        :options="penOptions"
+                        optionLabel="description"
+                        optionValue="pen_no"
+                        style="height: 50%;"
+
+                        />
+                      </div>
 
                      <div>
                         <label for="identifier">Identifier</label>
                         <InputText v-model="line.identifier"  />
                     </div>
-                <!-- Remove Order Line Button -->
-                    <!-- <div class="flex items-center">
-                        <Button
-                            icon="pi pi-times"
-                            class="p-button-rounded p-button-danger"
-                            @click="removeOrderLine(index)"
 
-                        />
-                    </div> -->
                 </div>
 
 

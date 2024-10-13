@@ -17,9 +17,11 @@ return new class extends Migration
             $table->id();
             $table->foreignIdFor(PurchaseReceipt::class);
             $table->foreignIdFor(PurchaseOrderLine::class);
+
             $table->string('item_no');  // Item number
             $table->integer('order_qty')->nullable();  // Quantity, nullable in case not set yet
             $table->integer('received_qty')->nullable();
+            $table->string('identifier');
             $table->timestamps();  // Created at and updated at timestamps
             // $table->timestamps();
         });

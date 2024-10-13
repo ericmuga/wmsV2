@@ -78,6 +78,12 @@ const authUser = props.auth.user;
                         <NavLink :href="route('profile.edit')" class="block px-2 py-1 text-gray-500">
                            Sausage
                         </NavLink>
+                        <NavLink :href="route('profile.edit')" class="block px-2 py-1 text-gray-500">
+                           Bacon & Ham
+                        </NavLink>
+                         <NavLink :href="route('profile.edit')" class="block px-2 py-1 text-gray-500">
+                           Pet Food
+                        </NavLink>
                          <NavLink :href="route('profile.edit')" class="block px-2 py-1 text-gray-500">
 
                         </NavLink>
